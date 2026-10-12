@@ -1,0 +1,15 @@
+# Keep line endings sane on Windows, Mac and Linux.
+# Without this, gradlew can break on Windows ("bad interpreter") after a git checkout.
+* text=auto
+*.java text eol=lf
+*.gradle text eol=lf
+*.md text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+
+# Binary files: never touch them.
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
