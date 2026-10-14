@@ -2,6 +2,7 @@ package lodge.view;
 
 import lodge.model.BillingCalculator;
 import lodge.model.RoomType;
+import lodge.model.User;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -34,11 +35,12 @@ public class MainWindow extends JFrame {
         default void onExport() { }
         default void onLogout() { }
         default void onExit() { }
+        default void onAdmin() { }
     }
 
     private static final int FIELD_HEIGHT = 36;
 
-    private final String username;
+    private final User user;
     private final BillTableModel tableModel;
     private Listener listener = new Listener() { };
 
@@ -49,7 +51,6 @@ public class MainWindow extends JFrame {
     private final JTextField paidField = new JTextField();
     private final JTextArea notesArea = new JTextArea(3, 20);
 
-    // live bill labels
     private final JLabel roomChargeLbl = new JLabel();
     private final JLabel discountLbl = new JLabel();
     private final JLabel extrasLbl = new JLabel();
@@ -66,9 +67,9 @@ public class MainWindow extends JFrame {
     private RoundButton saveButton;
     private JScrollPane bodyScroll;
 
-    public MainWindow(String username, BillTableModel tableModel) {
+    public MainWindow(User user, BillTableModel tableModel) {
         super(AppInfo.NAME);
-        this.username = username;
+        this.user = user;
         this.tableModel = tableModel;
         this.table = new BillTable(tableModel);
         this.sorter = new TableRowSorter<>(tableModel);
@@ -93,7 +94,6 @@ public class MainWindow extends JFrame {
 
         wireLiveUpdates();
         clearForm();
-        // Never open bigger than the screen (taskbar excluded), whatever the display scaling.
         Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
         setSize(Math.min(1100, usable.width), Math.min(860, usable.height));
         setMinimumSize(new Dimension(Math.min(900, usable.width), Math.min(520, usable.height)));
@@ -149,6 +149,12 @@ public class MainWindow extends JFrame {
         file.add(item("Log out", ctrl(KeyEvent.VK_L), () -> listener.onLogout()));
         file.add(item("Exit", ctrl(KeyEvent.VK_Q), () -> listener.onExit()));
 
+        if (user.isAdmin()) {
+            JMenu admin = menu("Admin", KeyEvent.VK_A);
+            admin.add(item("Manage users...", ctrl(KeyEvent.VK_M), () -> listener.onAdmin()));
+            bar.add(admin);
+        }
+
         JMenu help = menu("Help", KeyEvent.VK_H);
         help.add(item("About", KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), this::showAbout));
 
@@ -157,10 +163,6 @@ public class MainWindow extends JFrame {
         return bar;
     }
 
-    /**
-     * The logo on a small white rounded badge, so any logo colours stay readable on the blue bar.
-     * Returns null when no logo file was added.
-     */
     private static JComponent logoBadge() {
         Icon logo = Logo.icon(150, 34);
         if (logo == null) return null;
@@ -194,7 +196,8 @@ public class MainWindow extends JFrame {
 
     private void showAbout() {
         JOptionPane.showMessageDialog(this,
-                AppInfo.NAME + "\nLogged in as: " + username
+                AppInfo.NAME + "\nLogged in as: " + user.displayName()
+                        + " (" + user.username() + ", " + user.role() + ")"
                         + "\n\nShortcuts: Ctrl+N new guest, Ctrl+S save, Ctrl+R receipt,\n"
                         + "Ctrl+D delete, Ctrl+E export, Ctrl+L log out, Ctrl+Q exit",
                 "About", JOptionPane.INFORMATION_MESSAGE);
@@ -217,7 +220,7 @@ public class MainWindow extends JFrame {
         tb.add(toolButton("Delete selected bill", Icons.trash(Theme.DARK_BLUE),
                 "Delete the selected bill (Ctrl+D or Delete)", () -> listener.onDelete()));
         tb.add(Box.createHorizontalGlue());
-        JLabel who = new JLabel("User: " + username);
+        JLabel who = new JLabel("User: " + user.displayName() + " (" + user.role() + ")");
         who.setForeground(Theme.DARK_BLUE);
         tb.add(who);
         return tb;
@@ -231,11 +234,6 @@ public class MainWindow extends JFrame {
         return b;
     }
 
-    /**
-     * The whole page sits inside a scroll pane. On a tall window everything fits and the bills
-     * table stretches to use the spare room. On a short window (or a screen with display scaling)
-     * the page scrolls, so the table can never be squeezed out of reach.
-     */
     private JComponent buildBody() {
         JPanel body = new ScrollBody(new BorderLayout(0, 10));
         body.setOpaque(false);
@@ -267,7 +265,7 @@ public class MainWindow extends JFrame {
         title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
         title.setForeground(Theme.DARK_BLUE);
         c.gridx = 0; c.gridy = 0; c.gridwidth = 2;
-        c.insets = new Insets(5, 2, 16, 12); // extra space under the title
+        c.insets = new Insets(5, 2, 16, 12);
         p.add(title, c);
         c.insets = new Insets(5, 2, 5, 12);
 
@@ -294,7 +292,6 @@ public class MainWindow extends JFrame {
         notesArea.setWrapStyleWord(true);
         notesArea.setForeground(Theme.TEXT);
         notesArea.setMargin(new Insets(6, 8, 6, 8));
-        // Tab should move to the next field, not insert a tab character.
         notesArea.setFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS,
                 Set.of(KeyStroke.getKeyStroke(KeyEvent.VK_TAB, 0)));
         notesArea.setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS,
@@ -304,7 +301,6 @@ public class MainWindow extends JFrame {
         notesScroll.setPreferredSize(new Dimension(100, 76));
         addRow(p, c, 7, "Notes:", notesScroll);
 
-        // No Calculate button: the live bill on the right updates as you type.
         saveButton = new RoundButton("Save bill", RoundButton.Kind.PRIMARY);
         saveButton.addActionListener(e -> listener.onSave());
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
@@ -404,7 +400,7 @@ public class MainWindow extends JFrame {
 
         Theme.styleField(searchField);
         searchField.setPreferredSize(new Dimension(250, 32));
-        searchField.addActionListener(e -> { }); // swallow Enter so it doesn't press Save bill
+        searchField.addActionListener(e -> { });
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
         header.add(titleRow, BorderLayout.WEST);
@@ -415,7 +411,7 @@ public class MainWindow extends JFrame {
         JScrollPane sp = new JScrollPane(table);
         sp.setBorder(new Theme.RoundedBorder(Theme.BORDER, 8));
         sp.getViewport().setBackground(Color.WHITE);
-        sp.setPreferredSize(new Dimension(100, 260)); // always room for about 7 rows
+        sp.setPreferredSize(new Dimension(100, 260));
         p.add(sp, BorderLayout.CENTER);
 
         footerLbl.setForeground(Theme.DARK_BLUE);
@@ -486,10 +482,6 @@ public class MainWindow extends JFrame {
         });
     }
 
-    // =====================================================================
-    //  Live updating and search (pure view behaviour)
-    // =====================================================================
-
     private void wireLiveUpdates() {
         DocumentListener dl = new DocumentListener() {
             @Override public void insertUpdate(DocumentEvent e) { listener.onFormChanged(); }
@@ -525,13 +517,11 @@ public class MainWindow extends JFrame {
     public String paidText() { return paidField.getText(); }
     public String notesText() { return notesArea.getText(); }
 
-    /** The selected row as an index into the repository, or -1 if nothing is selected. */
     public int selectedRow() {
         int v = table.getSelectedRow();
         return v < 0 ? -1 : table.convertRowIndexToModel(v);
     }
 
-    /** Selects and scrolls to a bill (index into the repository), if the search is not hiding it. */
     public void revealRow(int modelRow) {
         int v = table.convertRowIndexToView(modelRow);
         if (v >= 0) {
@@ -566,7 +556,6 @@ public class MainWindow extends JFrame {
         balanceLbl.setForeground(Theme.RED);
     }
 
-    /** Outlines the fields that hold bad input in red. */
     public void markInvalid(boolean nights, boolean extras, boolean paid) {
         Theme.setInvalid(nightsField, nights);
         Theme.setInvalid(extrasField, extras);
@@ -592,14 +581,12 @@ public class MainWindow extends JFrame {
         markInvalid(false, false, false);
         guestField.requestFocusInWindow();
         if (bodyScroll != null) {
-            bodyScroll.getVerticalScrollBar().setValue(0); // back to the top, ready for the next guest
+            bodyScroll.getVerticalScrollBar().setValue(0);
         }
     }
 
     public void focusGuest() { guestField.requestFocusInWindow(); }
     public void focusNights() { nightsField.requestFocusInWindow(); }
-
-    // ---------- dialogs ----------
 
     public void showError(String message) {
         showError("Check input", message);
@@ -626,11 +613,14 @@ public class MainWindow extends JFrame {
         new ReceiptDialog(this, billId, text).setVisible(true);
     }
 
+    public void showAdminDialog(lodge.model.Database db, lodge.model.AuthService auth) {
+        new AdminDialog(this, db, auth, user).setVisible(true);
+    }
+
     // =====================================================================
     //  Small helper classes
     // =====================================================================
 
-    /** A page that follows the scroll pane's width, and stretches to its height when there is spare room. */
     private static final class ScrollBody extends JPanel implements Scrollable {
         ScrollBody(LayoutManager layout) {
             super(layout);
@@ -662,7 +652,6 @@ public class MainWindow extends JFrame {
         }
     }
 
-    /** The saved-bills table, with a friendly message when it has no rows to show. */
     private final class BillTable extends JTable {
         BillTable(BillTableModel model) {
             super(model);
@@ -684,7 +673,6 @@ public class MainWindow extends JFrame {
         }
     }
 
-    /** Draws money as "K 1,250.00", and colours the balance column. */
     private static final class CellRenderer extends DefaultTableCellRenderer {
         private final boolean colourBalance;
 
@@ -708,7 +696,6 @@ public class MainWindow extends JFrame {
         }
     }
 
-    /** A text field that shows grey hint text while it is empty. */
     private static final class HintField extends JTextField {
         private final String hint;
 

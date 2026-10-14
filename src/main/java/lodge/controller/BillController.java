@@ -5,11 +5,13 @@ import lodge.model.BillCsvExporter;
 import lodge.model.BillRepository;
 import lodge.model.BillingCalculator;
 import lodge.model.ReceiptFormatter;
+import lodge.model.User;
 import lodge.view.MainWindow;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -19,21 +21,21 @@ import static lodge.model.BillingCalculator.money;
 
 /**
  * CONTROLLER: reacts to what the user does in the view, asks the model to do the work,
- * and tells the view what to show. It is the only class that knows about both sides.
+ * and tells the view what to show.
  */
 public final class BillController implements MainWindow.Listener {
 
     private static final int MAX_GUEST_LENGTH = 60;
     private static final int MAX_NOTES_LENGTH = 300;
 
-    private final String username;
+    private final User user;
     private final BillRepository repository;
     private final MainWindow view;
     private final Runnable logoutAction;
     private final Runnable footerListener = this::refreshFooter;
 
-    public BillController(String username, BillRepository repository, MainWindow view, Runnable logoutAction) {
-        this.username = username;
+    public BillController(User user, BillRepository repository, MainWindow view, Runnable logoutAction) {
+        this.user = user;
         this.repository = repository;
         this.view = view;
         this.logoutAction = logoutAction;
@@ -100,11 +102,11 @@ public final class BillController implements MainWindow.Listener {
         Bill bill = new Bill(repository.nextId(), guest, view.roomType(), nights.get(),
                 r.extras(), r.paid(), notes,
                 r.roomCharge(), r.discount(), r.total(), r.balance(),
-                LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS), username);
+                LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS), user.username());
         try {
             repository.add(bill);
-        } catch (IOException e) {
-            view.showError("Could not save", "The bill could not be saved to disk:\n" + e.getMessage());
+        } catch (SQLException e) {
+            view.showError("Could not save", "The bill could not be saved to the database:\n" + e.getMessage());
             return;
         }
         view.setStatus("Saved " + bill.id() + ": " + balanceText(bill));
@@ -134,8 +136,8 @@ public final class BillController implements MainWindow.Listener {
         if (!view.confirm("Confirm delete", "Delete bill " + b.id() + " for " + b.guest() + "?")) return;
         try {
             repository.remove(view.selectedRow());
-        } catch (IOException e) {
-            view.showError("Could not delete", "The change could not be saved to disk:\n" + e.getMessage());
+        } catch (SQLException e) {
+            view.showError("Could not delete", "The change could not be saved to the database:\n" + e.getMessage());
             return;
         }
         view.setStatus("Deleted " + b.id());
@@ -156,6 +158,12 @@ public final class BillController implements MainWindow.Listener {
         } catch (IOException e) {
             view.showError("Could not export", "The bills could not be exported:\n" + e.getMessage());
         }
+    }
+
+    @Override
+    public void onAdmin() {
+        if (!user.isAdmin()) return;
+        view.showAdminDialog(repository.database(), null);
     }
 
     @Override
